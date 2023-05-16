@@ -1,0 +1,26 @@
+apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
+metadata:
+  generateName: cp4ba-run
+  namespace: default
+spec:
+  pipelineRef:
+    name: cp4ba-deploy
+  serviceAccountName: openshift-client-sa
+  params:
+    - name: CP4BA-VERSION
+      value: "22.0.2"
+    - name: namespace
+      value: "cp4ba-starter"
+  workspaces:
+    - name: ws
+      volumeClaimTemplate:
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 1Gi
+  podTemplate:
+    securityContext:
+      fsGroup: 65532
