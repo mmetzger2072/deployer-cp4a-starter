@@ -234,9 +234,6 @@ spec:
         name: createjsonfile
       runAfter:
         - add-operator-group
-      params:
-        #- name: VERSION
-        #  value: "22.0.2"
       workspaces:
         - name: task-ws
           workspace: ws
