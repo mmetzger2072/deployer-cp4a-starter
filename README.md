@@ -16,7 +16,6 @@ Currently uses oc client from tekton hub
 Uses sources files located in the source dir
 
 ###
-First run the `bash pre-reqs.sh` to install the git-clone task into the tekton catalog and set the correct permissions 
 
 oc apply -f tekton.yaml to install configure service account and install tasks and pipeline
 oc create -f install-cb4ba-pipeline-run.yaml to kick off pipeline
