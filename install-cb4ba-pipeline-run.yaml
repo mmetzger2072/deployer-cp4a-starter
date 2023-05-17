@@ -6,7 +6,6 @@ metadata:
 spec:
   pipelineRef:
     name: cp4ba-deploy
-  serviceAccountName: openshift-client-sa
   params:
     - name: CP4BA-VERSION
       value: "22.0.2"

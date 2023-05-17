@@ -1,12 +1,12 @@
 #!/bin/bash
 
-output=$(tkn hub search git-cloned)
+output=$(tkn hub search openshift-client)
 
 # Check if the output contains the keyword 'No plugins found'
 if [[ $output == *"No plugins found"* ]]; then
-    tkn hub install task git-clone
+    tkn hub install task openshift-client
 else
-    echo "git-cloned is already installed"
+    echo "openshift-client is already installed"
 fi
 
 if [[ $(oc get clusterrolebinding | grep -c "pipeline-clusteradmin-cr") ]]; then

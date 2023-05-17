@@ -1,78 +1,6 @@
-
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: openshift-client-sa
----
-apiVersion: authorization.openshift.io/v1
-kind: ClusterRole
-metadata:
-  name: ibm-cp4a-operator
-  labels:
-    app.kubernetes.io/instance: ibm-dba
-    app.kubernetes.io/managed-by: ibm-dba
-    app.kubernetes.io/name: ibm-dba
-rules:
-- apiGroups:
-  - security.openshift.io
-  resources:
-  - securitycontextconstraints
-  verbs:
-  - create
-  - get
-  - list
-  - patch
-  - update
-  - watch
-  - use  
-- apiGroups:
-  - ""
-  resources:
-  - securitycontextconstraints
-  - namespaces
-  verbs:
-  - create
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - icp4a.ibm.com
-  resources:
-  - '*'
-  verbs:
-  - '*'
-- apiGroups:
-  - extensions
-  resources:
-  - podsecuritypolicies
-  verbs:
-  - '*'
-- apiGroups:
-  - policy
-  resources:
-  - podsecuritypolicies
-  verbs:
-  - '*'
----
-kind: RoleBinding
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: ibm-cp4a-operator
-  labels:
-    app.kubernetes.io/instance: ibm-dba
-    app.kubernetes.io/managed-by: ibm-dba
-    app.kubernetes.io/name: ibm-dba
-subjects:
-- kind: ServiceAccount
-  name: ibm-cp4a-operator
-  namespace: cp4ba-starter
-roleRef:
-  kind: ClusterRole
-  name: openshift-client-role
-  apiGroup: rbac.authorization.k8s.io
----
+# I have to include this to use workspaces
+# Workspaces can only be propagated to embedded task specs, not referenced Tasks.
+# https://tekton.dev/docs/pipelines/taskruns/#propagating-workspaces-to-referenced-tasks
 apiVersion: tekton.dev/v1beta1
 kind: Task
 metadata:
@@ -221,7 +149,7 @@ spec:
         tar -xvf $currentDir/ibm-cp-automation/inventory/cp4aOperatorSdk/files/deploy/crs/$fileName
 
         cp $currentDir/cert-kubernetes/descriptors/op-olm/catalog_source.yaml $(workspaces.task-ws.path)/catalog_source.yaml
-        cat $(workspaces.task-ws.path)/catalog_source.yaml 
+        cat $(workspaces.task-ws.path)/catalog_source.yaml
 
   workspaces:
     - name: task-ws
@@ -273,24 +201,6 @@ spec:
             yaml_content=$(cat "$yaml_file")
             # Print the content to verify
             echo "$yaml_content" | oc apply -f -
-
-            
-      workspaces:
-        - name: oc-workspace
-          workspace: ws
-    - name: give-admin-role-namespace
-      taskRef:
-        name: openshift-client
-      runAfter:
-        - add-namespace
-      params:
-        - name: ARGS
-          value: [$(params.namespace)]
-        - name: VERSION
-          value: "4.10"
-        - name: SCRIPT
-          value: |
-            oc adm policy add-role-to-user admin -n $(params.namespace) system:serviceaccount:default:openshift-client-sa
       workspaces:
         - name: oc-workspace
           workspace: ws
@@ -298,7 +208,7 @@ spec:
       taskRef:
         name: openshift-client
       runAfter:
-        - give-admin-role-namespace
+        - add-namespace
       params:
         - name: ARGS
           value: [$(params.namespace)]
