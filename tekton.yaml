@@ -341,7 +341,7 @@ spec:
         - add-cp4ba-to-marketplace
       params:
         - name: ARGS
-          value: [$(params.CP4BA-VERSION)]
+          value: [$(params.CP4BA-VERSION), $(params.namespace)]
         - name: VERSION
           value: "4.10"
         - name: SCRIPT
@@ -359,7 +359,8 @@ spec:
             channel="v${major}.${minor}"
             echo "$channel"
             yaml_file=$(workspaces.oc-workspace.path)/sources/subscription.yaml
-            yq eval ".spec.channel = \"$channel\"" -i $yaml_file
+            yq -e ".spec.channel = \"$channel\"" -i $yaml_file
+            yq -e '.metadata.namespace = "$(params.namespace)"' -i $yaml_file
             yaml_content=$(cat "$yaml_file")
             echo "$yaml_content"
             # Print the content to verify
@@ -380,11 +381,26 @@ spec:
         - name: SCRIPT
           value: |
             #!/usr/bin/env bash
-            bash $(workspaces.oc-workspace.path)/sources/wait-for-operator.sh
+            #!/bin/bash
+            namespace="$(params.namespace)"
+            while ! echo $(oc get csv -n "$namespace" --no-headers -o custom-columns=NAME:.metadata.name) | grep -c "ibm-cp4a-operator.*";
+            do
+                echo "Waitng for csv to install..."
+                sleep 10
+            done
+            echo "CSV installed!"
+            echo "Waiting for operator to be ready..."
+            cp4baOperator=$(oc get csv -n "$namespace" --no-headers -o custom-columns=NAME:.metadata.name | grep "ibm-cp4a-operator.*")
+            echo "csv/$cp4baOperator"
+            while [[ -z $(oc get csv/$cp4baOperator -n "$namespace" -o 'jsonpath={.status.phase}' | grep 'Succeeded') ]]; do
+                echo "Waiting for CSV to reach 'Succeeded' condition..."
+                sleep 10
+            done
+            echo "Done!"
       workspaces:
         - name: oc-workspace
           workspace: ws
-    - name: install-cp4ba
+    - name: deploy-cp4ba
       taskRef:
         name: openshift-client
       runAfter:
@@ -406,6 +422,40 @@ spec:
             echo "$yaml_content"
             # Print the content to verify
             echo "$yaml_content" | oc apply -f -
+      workspaces:
+        - name: oc-workspace
+          workspace: ws
+    - name: get-login-info
+      taskRef:
+        name: openshift-client
+      timeout: "2h15m"
+      runAfter:
+        - deploy-cp4ba
+      params:
+        - name: ARGS
+          value: [$(params.namespace, params.CP4BA-VERSION)]
+        - name: VERSION
+          value: "4.10"
+        - name: SCRIPT
+          value: |
+            #!/usr/bin/env bash
+            oc project $(params.namespace)
+            SECONDS=0
+            echo "Waiting for cp4ba to deploy in $(params.namespace)"
+            while [ -z $(oc get route --no-headers -o custom-columns=NAME:.spec.host | grep "^cpd") ];
+            do
+              ELAPSED="Elapsed time: $(($SECONDS / 3600))hrs $((($SECONDS / 60) % 60))min $(($SECONDS % 60))sec"
+              echo "Waiting for cp4ba to deploy ($ELAPSED)..."
+              sleep 90
+            done
+            ELAPSED="Elapsed time: $(($SECONDS / 3600))hrs $((($SECONDS / 60) % 60))min $(($SECONDS % 60))sec"
+            echo "cp4ba deployed successfully! ($ELAPSED)"
+            password=$(oc -n ibm-common-services get secret platform-auth-idp-credentials -o jsonpath='{.data.admin_password}' | base64 -d)
+            echo "Login info"
+            url=$(oc get route --no-headers -o custom-columns=NAME:.spec.host | grep "^cpd")
+            echo "url: $url"
+            echo "username: admin"
+            echo "password: $password"
       workspaces:
         - name: oc-workspace
           workspace: ws

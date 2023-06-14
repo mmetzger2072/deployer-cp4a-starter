@@ -4,6 +4,9 @@ metadata:
   generateName: cp4ba-run
   namespace: default
 spec:
+  timeouts:
+    pipeline: "2h30m00s"
+    tasks: "2h29m59s"
   pipelineRef:
     name: cp4ba-deploy
   params:
