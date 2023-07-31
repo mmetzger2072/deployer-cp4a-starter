@@ -1,159 +1,3 @@
-# I have to include this to use workspaces
-# Workspaces can only be propagated to embedded task specs, not referenced Tasks.
-# https://tekton.dev/docs/pipelines/taskruns/#propagating-workspaces-to-referenced-tasks
-apiVersion: tekton.dev/v1beta1
-kind: Task
-metadata:
-  name: openshift-client
-  labels:
-    app.kubernetes.io/version: "0.1"
-  annotations:
-    tekton.dev/categories: Openshift
-    tekton.dev/pipelines.minVersion: "0.12.1"
-    tekton.dev/tags: cli
-    tekton.dev/displayName: "openshift client"
-    tekton.dev/platforms: "linux/amd64"
-spec:
-  description: >-
-    This task runs commands against the cluster where the task run is
-    being executed.
-    OpenShift is a Kubernetes distribution from Red Hat which provides oc,
-    the OpenShift CLI that complements kubectl for simplifying deployment
-    and configuration applications on OpenShift.
-  params:
-    - name: SCRIPT
-      description: The OpenShift CLI arguments to run
-      type: string
-      default: "oc $@"
-    - name: ARGS
-      description: The OpenShift CLI arguments to run
-      type: array
-      default:
-        - "help"
-    - name: VERSION
-      description: The OpenShift Version to use
-      type: string
-      default: "4.10"
-  resources:
-    inputs:
-      - name: source
-        type: git
-        optional: true
-  results:
-    - name: oc-output
-      description: The output of the oc command
-  steps:
-    - name: oc
-      image: quay.io/openshift/origin-cli:$(params.VERSION)
-      script: "$(params.SCRIPT)"
-      args:
-        - "$(params.ARGS)"
-  workspaces:
-    - name: oc-workspace
----
-apiVersion: tekton.dev/v1beta1
-kind: Task
-metadata:
-  name: createjsonfile
-spec:
-  results:
-    - name: createjsonfile
-  steps:
-    - name: get-marketplace-yaml
-      image: alpine
-      script: |
-        touch $(workspaces.task-ws.path)/dockerconfig.json
-        echo "JSON File created"
-  workspaces:
-    - name: task-ws
----
-apiVersion: tekton.dev/v1beta1
-kind: Task
-metadata:
-  name: ibmcloud-secrets-manager-get
-  labels:
-    app.kubernetes.io/version: "0.1"
-  annotations:
-    tekton.dev/categories: IBM Cloud
-    tekton.dev/pipelines.minVersion: "0.17.0"
-    tekton.dev/tags: cli
-    tekton.dev/displayName: "IBM Cloud Secrets Manager Get Secret"
-    tekton.dev/platforms: "linux/amd64"
-spec:
-  description: >-
-    This task retrieves a secret from IBM Cloud Secrets Manager using a key ID
-  params:
-    - name: KEY_ID
-      description: An IBM Cloud Secrets Manager key ID
-      type: string
-      default: 968d7819-f2c5-7b67-c420-3c6bfd51521e
-    - name: SECRETS_MANAGER_ENDPOINT_URL
-      description: An IBM Cloud Secrets Manager instance endpoint URL (https://cloud.ibm.com/apidocs/secrets-manager/secrets-manager-v2#endpoints)
-      type: string
-      default: https://{instance_ID}.us-south.secrets-manager.appdomain.cloud
-  results:
-    - name: secret-value
-      description: A secret value retrieved using the provided KEY_ID
-  steps:
-    - name: retrieve-key
-      image: quay.io/openshift/origin-cli:4.10
-      script: |
-        #!/usr/bin/env bash
-
-        # Retrives the IBM Cloud API Key configured in a `deployer` cluster
-        export IBMCLOUD_API_KEY=$(oc get secret ibm-secret -n kube-system -o jsonpath='{.data.apiKey}' | base64 -d)
-        export AUTH_RESPONSE_JSON=$(curl -s -X POST \
-          "https://iam.cloud.ibm.com/identity/token" \
-          --header 'Content-Type: application/x-www-form-urlencoded' \
-          --header 'Accept: application/json' \
-          --data-urlencode 'grant_type=urn:ibm:params:oauth:grant-type:apikey' \
-          --data-urlencode "apikey=${IBMCLOUD_API_KEY}")
-        export ACCESS_TOKEN=$(echo $AUTH_RESPONSE_JSON | grep -o '"access_token":"[^"]*' | grep -o '[^"]*$')
-        export SECRET_JSON=$(curl -s -X GET --location --header "Authorization: Bearer ${ACCESS_TOKEN}" --header "Accept: application/json" "$(params.SECRETS_MANAGER_ENDPOINT_URL)/api/v2/secrets/$(params.KEY_ID)")
-        export SECRET=$(echo $SECRET_JSON |  grep -o '"payload":"[^"]*' | grep -o '[^"]*$')
-        echo $SECRET | tee $(results.secret-value.path)
----
-apiVersion: tekton.dev/v1beta1
-kind: Task
-metadata:
-  name: get-cp4ba-yaml-task
-spec:
-  results:
-    - name: CP4BAyamlFile
-  params:
-    - name: CP4BA-VERSION
-      description: Enter your CP4BA version
-      type: string
-  steps:
-    - name: get-marketplace-yaml
-      image: alpine/curl
-      script: |
-        wget https://github.com/mikefarah/yq/releases/download/v4.33.3/yq_linux_amd64.tar.gz -O - | tar xz && mv yq_linux_amd64 /usr/bin/yq
-        echo $(yq --version)
-        curl -s https://raw.githubusercontent.com/IBM/cloud-pak/master/repo/case/ibm-cp-automation/index.yaml > cp-index.yaml
-        version=$(yq eval '.versions | with_entries(select(.value.appVersion == "22.0.2-IF004")) | keys' cp-index.yaml)
-
-        # trim the whitespace
-        version=$(echo "$version" | tr -d '-')
-        version="${version#"${version%%[![:space:]]*}"}"
-        version="${version%"${version##*[![:space:]]}"}"
-        echo "$version"
-
-        curl -L -O "https://github.com/IBM/cloud-pak/raw/master/repo/case/ibm-cp-automation/$version/ibm-cp-automation-$version.tgz"
-
-        tar -xvzf "ibm-cp-automation-$version.tgz"
-
-        currentDir=$(pwd)
-        fileName=$(ls -p $currentDir/ibm-cp-automation/inventory/cp4aOperatorSdk/files/deploy/crs | grep -v /)
-
-        tar -xvf $currentDir/ibm-cp-automation/inventory/cp4aOperatorSdk/files/deploy/crs/$fileName
-
-        cp $currentDir/cert-kubernetes/descriptors/op-olm/catalog_source.yaml $(workspaces.task-ws.path)/catalog_source.yaml
-        cat $(workspaces.task-ws.path)/catalog_source.yaml
-
-  workspaces:
-    - name: task-ws
----
 apiVersion: tekton.dev/v1beta1
 kind: Pipeline
 metadata:
@@ -161,7 +5,7 @@ metadata:
   namespace: default
 spec:
   params:
-    - name: CP4BA-VERSION
+    - name: cp4ba-version
       type: string
       default: "22.0.2"
     - name: namespace
@@ -184,280 +28,336 @@ spec:
           value: sources
     - name: add-namespace
       taskRef:
-        name: openshift-client
-      runAfter:
-        - get-sources
+        kind: Task
+        name: ibm-pak
       params:
-        - name: ARGS
-          value: [$(params.namespace)]
-        - name: VERSION
-          value: "4.10"
         - name: SCRIPT
           value: |
-            #!/usr/bin/env bash
-            yaml_file=$(workspaces.oc-workspace.path)/sources/namespace.yaml
-            wget https://github.com/mikefarah/yq/releases/download/v4.33.3/yq_linux_amd64.tar.gz -O - | tar xz && mv yq_linux_amd64 /usr/bin/yq
-            yq -e '.metadata.name = "$(params.namespace)"' -i $yaml_file
-            # Read the content of the YAML file and save it to a variable
-            yaml_content=$(cat "$yaml_file")
-            # Print the content to verify
-            echo "$yaml_content" | oc apply -f -
-      workspaces:
-        - name: oc-workspace
-          workspace: ws
+            oc apply -f - <<EOF 
+            kind: Namespace
+            apiVersion: v1
+            metadata:
+              name: $(params.namespace)
+            EOF
     - name: add-operator-group
-      taskRef:
-        name: openshift-client
       runAfter:
         - add-namespace
-      params:
-        - name: ARGS
-          value: [$(params.namespace)]
-        - name: VERSION
-          value: "4.10"
-        - name: SCRIPT
-          value: |
-            #!/usr/bin/env bash
-            # Read the content of the YAML file and save it to a variable
-            yaml_file=$(workspaces.oc-workspace.path)/sources/operator_group.yaml
-            wget https://github.com/mikefarah/yq/releases/download/v4.33.3/yq_linux_amd64.tar.gz -O - | tar xz && mv yq_linux_amd64 /usr/bin/yq
-            yq -e '.metadata.namespace = "$(params.namespace)"' -i $yaml_file
-            yq -e '.spec.targetNamespaces[0]="$(params.namespace)"' -i $yaml_file
-            yaml_content=$(cat "$yaml_file")
-            # Print the content to verify
-            echo "$yaml_content" | oc apply -f -
-      workspaces:
-        - name: oc-workspace
-          workspace: ws
-    - name: create-json-file
-      taskRef:
-        name: createjsonfile
-      runAfter:
-        - add-operator-group
-      workspaces:
-        - name: task-ws
-          workspace: ws
-    - name: copy-pull-secret
-      taskRef:
-        name: openshift-client
-      runAfter:
-        - create-json-file
-      params:
-        - name: ARGS
-          value: [$(workspaces.oc-workspace.path)/dockerconfig.json]
-        - name: VERSION
-          value: "4.10"
-        - name: SCRIPT
-          value: |
-            oc get secret/pull-secret -n openshift-config --template='{{index .data ".dockerconfigjson" | base64decode}}' > $1
-      workspaces:
-        - name: oc-workspace
-          workspace: ws
-    - name: get-ibm-entitlement-key
       taskRef:
         kind: Task
-        name: ibmcloud-secrets-manager-get
-      runAfter:
-        - create-json-file
+        name: ibm-pak
+      params:
+        - name: SCRIPT
+          value: |
+            oc apply -f - <<EOF 
+            apiVersion: operators.coreos.com/v1alpha2
+            kind: OperatorGroup
+            metadata:
+              name: ibm-cp4a-operator-catalog-group
+              namespace: $(params.namespace)
+            spec:
+              targetNamespaces:
+              - $(params.namespace)
+            EOF
+    - name: get-ibm-entitlement-key
       params:
         - name: KEY_ID
           value: 968d7819-f2c5-7b67-c420-3c6bfd51521e
         - name: SECRETS_MANAGER_ENDPOINT_URL
           value: >-
             https://afa20521-cd75-4864-843f-e59fd0ffd49d.us-south.secrets-manager.appdomain.cloud
-    - name: update-pull-secret
       taskRef:
-        name: openshift-client
+        kind: Task
+        name: ibmcloud-secrets-manager-get
+    - name: set-retrieved-entitlement-key
       runAfter:
         - get-ibm-entitlement-key
-        - copy-pull-secret
+        - add-namespace
       params:
-        - name: ARGS
-          value: [
-            $(tasks.get-ibm-entitlement-key.results.secret-value),
-            $(workspaces.oc-workspace.path)/dockerconfig.json
-          ]
-        - name: VERSION
-          value: "4.10"
-        - name: SCRIPT
-          value: |
-            oc registry login --registry="cp.icr.io" --auth-basic="cp:$1" --to=$2
-      workspaces:
-        - name: oc-workspace
-          workspace: ws
-    - name: install-entitlement-key
-      taskRef:
-        name: openshift-client
+        - name: entitlement-key
+          value: $(tasks.get-ibm-entitlement-key.results.secret-value)
+        - name: namespace
+          value: "$(params.namespace)"
+      taskSpec:
+        params:
+          - name: entitlement-key
+          - name: namespace
+        steps:
+          - name: set-entitlement-key
+            image: quay.io/openshift/origin-cli:4.10
+            script: |
+              #!/usr/bin/env bash
+              oc get secret "ibm-entitlement-key" -n $(params.namespace)
+              if [ $? -eq 0 ]; then
+                  echo "Deleting existing secret..."
+                  oc delete secrets "ibm-entitlement-key" -n $(params.namespace)
+              fi
+              oc create secret docker-registry "ibm-entitlement-key" -n $(params.namespace) "--docker-server=cp.icr.io" "--docker-username=cp" "--docker-password=$(params.entitlement-key)"
+    - name: create-sa
       runAfter:
-        - update-pull-secret
+        - add-namespace
+      taskRef:
+        kind: Task
+        name: ibm-pak
       params:
-        - name: ARGS
-          value: [
-             $(workspaces.oc-workspace.path)/dockerconfig.json
-          ]
-        - name: VERSION
-          value: "4.10"
         - name: SCRIPT
           value: |
-            oc set data secret/pull-secret -n openshift-config --from-file=.dockerconfigjson=$1 
-      workspaces:
-        - name: oc-workspace
-          workspace: ws
+            oc project $(params.namespace)
+            oc apply -f - <<EOF 
+            apiVersion: v1
+            kind: ServiceAccount
+            metadata:
+              name: ibm-cp4ba-anyuid
+            imagePullSecrets:
+            - name: "ibm-entitlement-key"
+            EOF
+            oc adm policy add-scc-to-user anyuid -z ibm-cp4ba-anyuid
     - name: get-cp4ba-yaml
-      taskRef:
-        name:  get-cp4ba-yaml-task
       runAfter:
-        - install-entitlement-key
+        - create-sa
+        - get-sources
       params:
-        - name: CP4BA-VERSION
-          value: $(params.CP4BA-VERSION)
+        - name: cp4ba-version
+          value: $(params.cp4ba-version)
+      taskSpec:
+        results:
+          - name: CP4BAyamlFile
+        params:
+          - name: cp4ba-version
+            description: Enter your CP4BA version
+            type: string
+        steps:
+          - name: get-marketplace-yaml
+            image: quay.io/congxdev/ibm-pak-ubi:latest
+            script: |
+              curl -s https://raw.githubusercontent.com/IBM/cloud-pak/master/repo/case/ibm-cp-automation/index.yaml > cp-index.yaml
+              appVersion=$(params.cp4ba-version)
+              version=$(yq eval '.versions | with_entries(select(.value.appVersion == "*'$appVersion'*")) | keys| .[-1]' cp-index.yaml)
+
+              version="${version#"${version%%[![:space:]]*}"}"
+              version="${version%"${version##*[![:space:]]}"}"
+              echo "Latest case $version for appVersion $appVersion"
+
+              curl -L -O "https://github.com/IBM/cloud-pak/raw/master/repo/case/ibm-cp-automation/$version/ibm-cp-automation-$version.tgz"
+
+              tar -xvzf "ibm-cp-automation-$version.tgz"
+
+              currentDir=$(pwd)
+              fileName=$(ls -p $currentDir/ibm-cp-automation/inventory/cp4aOperatorSdk/files/deploy/crs | grep -v /)
+
+              tar -xvf $currentDir/ibm-cp-automation/inventory/cp4aOperatorSdk/files/deploy/crs/$fileName
+
+              cp $currentDir/cert-kubernetes/descriptors/op-olm/catalog_source.yaml $(workspaces.task-ws.path)/catalog_source.yaml
+              cat $(workspaces.task-ws.path)/catalog_source.yaml
+        workspaces:
+          - name: task-ws
       workspaces:
         - name: task-ws
           workspace: ws
     - name: add-cp4ba-to-marketplace
-      taskRef:
-        name: openshift-client
       runAfter:
         - get-cp4ba-yaml
-      params:
-        - name: ARGS
-          value: [$(params.CP4BA-VERSION)]
-        - name: VERSION
-          value: "4.10"
-        - name: SCRIPT
-          value: |
+        - add-operator-group
+        - set-retrieved-entitlement-key
+      taskSpec:
+        steps:
+        - name: script
+          image: quay.io/openshift/origin-cli:4.10
+          script: |
             #!/usr/bin/env bash
             yaml_file=$(workspaces.oc-workspace.path)/catalog_source.yaml 
             yaml_content=$(cat "$yaml_file") 
             echo "$yaml_content"
             oc apply -f $(workspaces.oc-workspace.path)/catalog_source.yaml 
+        workspaces:
+          - name: oc-workspace
       workspaces:
         - name: oc-workspace
           workspace: ws
     - name: install-cp4ba-operator
-      taskRef:
-        name: openshift-client
       runAfter:
         - add-cp4ba-to-marketplace
       params:
-        - name: ARGS
-          value: [$(params.CP4BA-VERSION), $(params.namespace)]
-        - name: VERSION
-          value: "4.10"
-        - name: SCRIPT
-          value: |
-            #!/usr/bin/env bash
-            # Read the content of the YAML file and save it to a variable
-            wget https://github.com/mikefarah/yq/releases/download/v4.33.3/yq_linux_amd64.tar.gz -O - | tar xz && mv yq_linux_amd64 /usr/bin/yq
-            decimal=$(params.CP4BA-VERSION)
+        - name: cp4ba-version
+          value: "$(params.cp4ba-version)"
+        - name: namespace
+          value: "$(params.namespace)"
+      taskSpec:
+        params:
+          - name: cp4ba-version
+          - name: namespace
+        steps:
+          - name: script
+            image: quay.io/congxdev/ibm-pak-ubi:latest
+            script: |
+              #!/usr/bin/env bash
+              # Read the content of the YAML file and save it to a variable
+              decimal=$(params.cp4ba-version)
 
-            # Extract major and minor versions
-            major=$(echo "$decimal" | cut -d '.' -f 1)
-            minor=$(echo "$decimal" | cut -d '.' -f 3)
+              # Extract major and minor versions
+              major=$(echo "$decimal" | cut -d '.' -f 1)
+              minor=$(echo "$decimal" | cut -d '.' -f 3)
 
-            # Format into "v<major>.<minor>"
-            channel="v${major}.${minor}"
-            echo "$channel"
-            yaml_file=$(workspaces.oc-workspace.path)/sources/subscription.yaml
-            yq -e ".spec.channel = \"$channel\"" -i $yaml_file
-            yq -e '.metadata.namespace = "$(params.namespace)"' -i $yaml_file
-            yaml_content=$(cat "$yaml_file")
-            echo "$yaml_content"
-            # Print the content to verify
-            echo "$yaml_content" | oc apply -f -
+              # Format into "v<major>.<minor>"
+              channel="v${major}.${minor}"
+              echo "$channel"
+              yaml_file=$(workspaces.oc-workspace.path)/sources/subscription.yaml
+              yq -e ".spec.channel = \"$channel\"" -i $yaml_file
+              yq -e '.metadata.namespace = "$(params.namespace)"' -i $yaml_file
+              yaml_content=$(cat "$yaml_file")
+              echo "$yaml_content"
+              # Print the content to verify
+              echo "$yaml_content" | oc apply -f -
+        workspaces:
+          - name: oc-workspace
       workspaces:
         - name: oc-workspace
           workspace: ws
     - name: wait-for-operator
       runAfter:
         - install-cp4ba-operator
-      taskRef:
-        name: openshift-client
       params:
-        - name: ARGS
-          value: [$(params.namespace)]
-        - name: VERSION
-          value: "4.10"
-        - name: SCRIPT
-          value: |
-            #!/usr/bin/env bash
-            #!/bin/bash
-            namespace="$(params.namespace)"
-            while ! echo $(oc get csv -n "$namespace" --no-headers -o custom-columns=NAME:.metadata.name) | grep -c "ibm-cp4a-operator.*";
-            do
-                echo "Waitng for csv to install..."
-                sleep 10
-            done
-            echo "CSV installed!"
-            echo "Waiting for operator to be ready..."
-            cp4baOperator=$(oc get csv -n "$namespace" --no-headers -o custom-columns=NAME:.metadata.name | grep "ibm-cp4a-operator.*")
-            echo "csv/$cp4baOperator"
-            while [[ -z $(oc get csv/$cp4baOperator -n "$namespace" -o 'jsonpath={.status.phase}' | grep 'Succeeded') ]]; do
-                echo "Waiting for CSV to reach 'Succeeded' condition..."
-                sleep 10
-            done
-            echo "Done!"
-      workspaces:
-        - name: oc-workspace
-          workspace: ws
+        - name: namespace
+          value: "$(params.namespace)"
+      taskSpec:
+        params:
+          - name: namespace
+        steps:
+          - name: script
+            image: quay.io/congxdev/ibm-pak-ubi:latest
+            script: |
+              #!/usr/bin/env bash
+              namespace="$(params.namespace)"
+              while ! echo $(oc get csv -n "$namespace" --no-headers -o custom-columns=NAME:.metadata.name) | grep -c "ibm-cp4a-operator.*";
+              do
+                  echo "Waitng for csv to install..."
+                  sleep 10
+              done
+              echo "CSV installed!"
+              echo "Waiting for operator to be ready..."
+              cp4baOperator=$(oc get csv -n "$namespace" --no-headers -o custom-columns=NAME:.metadata.name | grep "ibm-cp4a-operator.*")
+              echo "csv/$cp4baOperator"
+              while [[ -z $(oc get csv/$cp4baOperator -n "$namespace" -o 'jsonpath={.status.phase}' | grep 'Succeeded') ]]; do
+                  echo "Waiting for CSV to reach 'Succeeded' condition..."
+                  sleep 10
+              done
+              echo "Done!"
     - name: deploy-cp4ba
-      taskRef:
-        name: openshift-client
       runAfter:
         - wait-for-operator
       params:
-        - name: ARGS
-          value: [$(params.namespace, params.CP4BA-VERSION)]
-        - name: VERSION
-          value: "4.10"
-        - name: SCRIPT
-          value: |
-            #!/usr/bin/env bash
-            # Read the content of the YAML file and save it to a variable
-            yaml_file=$(workspaces.oc-workspace.path)/sources/cp4ba.yaml
-            wget https://github.com/mikefarah/yq/releases/download/v4.33.3/yq_linux_amd64.tar.gz -O - | tar xz && mv yq_linux_amd64 /usr/bin/yq
-            yq -e '.metadata.namespace = "$(params.namespace)"' -i $yaml_file
-            yq -e '.spec.appVersion = "$(params.CP4BA-VERSION)"' -i $yaml_file
-            yaml_content=$(cat "$yaml_file")
-            echo "$yaml_content"
-            # Print the content to verify
-            echo "$yaml_content" | oc apply -f -
+        - name: cp4ba-version
+          value: "$(params.cp4ba-version)"
+        - name: namespace
+          value: "$(params.namespace)"
+      taskSpec:
+        params:
+          - name: cp4ba-version
+          - name: namespace
+        steps:
+          - name: script
+            image: quay.io/congxdev/ibm-pak-ubi:latest
+            script: |
+              #!/usr/bin/env bash
+              # Read the content of the YAML file and save it to a variable
+              yaml_file=$(workspaces.oc-workspace.path)/sources/cp4ba.yaml
+              wget https://github.com/mikefarah/yq/releases/download/v4.33.3/yq_linux_amd64.tar.gz -O - | tar xz && mv yq_linux_amd64 /usr/bin/yq
+              yq -e '.metadata.namespace = "$(params.namespace)"' -i $yaml_file
+              yq -e '.spec.appVersion = "$(params.cp4ba-version)"' -i $yaml_file
+              yaml_content=$(cat "$yaml_file")
+              echo "$yaml_content"
+              # Print the content to verify
+              echo "$yaml_content" | oc apply -f -
+        workspaces:
+          - name: oc-workspace
       workspaces:
         - name: oc-workspace
           workspace: ws
-    - name: get-login-info
+    - name: wait-for-deploy
       taskRef:
-        name: openshift-client
-      timeout: "2h15m"
+        kind: Task
+        name: ibm-pak
+      timeout: "4h15m"
       runAfter:
         - deploy-cp4ba
       params:
-        - name: ARGS
-          value: [$(params.namespace, params.CP4BA-VERSION)]
-        - name: VERSION
-          value: "4.10"
         - name: SCRIPT
           value: |
             #!/usr/bin/env bash
             oc project $(params.namespace)
             SECONDS=0
             echo "Waiting for cp4ba to deploy in $(params.namespace)"
-            while [ -z $(oc get route --no-headers -o custom-columns=NAME:.spec.host | grep "^cpd") ];
+            status=$(oc get Cartridge/icp4ba -n $(params.namespace) -o jsonpath='{.status.conditions}' | jq '.[0].status')
+            while [[ $status != '"True"' ]]
             do
+              status=$(oc get Cartridge/icp4ba -n $(params.namespace) -o jsonpath='{.status.conditions}' | jq '.[0].status')
               ELAPSED="Elapsed time: $(($SECONDS / 3600))hrs $((($SECONDS / 60) % 60))min $(($SECONDS % 60))sec"
               echo "Waiting for cp4ba to deploy ($ELAPSED)..."
               sleep 90
             done
             ELAPSED="Elapsed time: $(($SECONDS / 3600))hrs $((($SECONDS / 60) % 60))min $(($SECONDS % 60))sec"
-            echo "cp4ba deployed successfully! ($ELAPSED)"
+            echo "Automation foundation deployment success! ($ELAPSED)"
+
+            echo "Now waiting on CP4BA to install... This could take up to 3 hours...."
+            while true; do
+              deploymentStatusJSON=$(oc get ICP4ACluster/icp4adeploy -n $(params.namespace) -o jsonpath={.status} | jq -c '[.conditions]')
+              PrereqReady=$(echo $deploymentStatusJSON | jq '.[0][] | select(.type == "PrereqReady")')
+              Running=$(echo $deploymentStatusJSON | jq '.[0][] | select(.type == "Running")' )
+              Ready=$(echo $deploymentStatusJSON | jq '.[0][] | select(.type == "Ready")' )
+              RunningStatus="False"
+              ReadyStatus="False"
+              PrereqReadyStatus="False"
+
+              if [[ -n "$PrereqReady" ]]; then
+                PrereqReadyStatus=$(echo $PrereqReady | jq '.status')
+              fi
+              if [[ -n "$Running" ]]; then
+                RunningStatus=$(echo $Running | jq '.status')
+              fi
+              if [[ -n "$Ready" ]]; then
+                ReadyStatus=$(echo $Ready | jq '.status')
+              fi
+
+              echo "Running status: $RunningStatus"
+              echo "Ready status: $ReadyStatus"
+              echo "PreReq status: $PrereqReadyStatus"
+
+              if [ $ReadyStatus == '"True"' ] && [ $RunningStatus == '"True"' ] && [ $PrereqReadyStatus == '"True"' ]; then
+                # Code block to be executed if all three conditions are true
+                echo "All conditions are true."
+                break
+              else
+                # Code block to be executed if any of the conditions is false
+                echo "At least one condition is false... waiting for deployment...."
+                echo "Checking back in 10 mins...."
+              fi
+              sleep 600
+              done
+              echo "CP4BA Installed!"
+    - name: update-certs-2
+      runAfter:
+        - wait-for-deploy
+      params:
+        - name: namespace
+          value: "$(params.namespace)"
+      taskRef:
+        kind: Task
+        name: ibm-tls-certs
+    - name: get-login-info
+      taskRef:
+        kind: Task
+        name: ibm-pak
+      runAfter:
+        - update-certs-2
+      params:
+        - name: SCRIPT
+          value: |
+            #!/usr/bin/env bash
+            oc project $(params.namespace) 
             password=$(oc -n ibm-common-services get secret platform-auth-idp-credentials -o jsonpath='{.data.admin_password}' | base64 -d)
             echo "Login info"
             url=$(oc get route --no-headers -o custom-columns=NAME:.spec.host | grep "^cpd")
-            echo "url: $url"
+            echo "url: https://$url"
             echo "username: admin"
             echo "password: $password"
-      workspaces:
-        - name: oc-workspace
-          workspace: ws
   workspaces:
     - name: ws          

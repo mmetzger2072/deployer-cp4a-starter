@@ -5,12 +5,12 @@ metadata:
   namespace: default
 spec:
   timeouts:
-    pipeline: "2h30m00s"
-    tasks: "2h29m59s"
+    pipeline: "4h30m00s"
+    tasks: "4h29m59s"
   pipelineRef:
     name: cp4ba-deploy
   params:
-    - name: CP4BA-VERSION
+    - name: cp4ba-version
       value: "22.0.2"
     - name: namespace
       value: "cp4ba-starter"
