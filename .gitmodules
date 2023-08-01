@@ -1,0 +1,3 @@
+[submodule "22.0.x/deployer-cp4a-starter-sources"]
+	path = 22.0.x/deployer-cp4a-starter-sources
+	url = https://github.com/cloud-native-toolkit/deployer-cp4a-starter-sources.git
