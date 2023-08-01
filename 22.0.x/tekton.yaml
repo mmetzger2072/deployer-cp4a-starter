@@ -13,19 +13,19 @@ spec:
       default: "default"
   tasks:
     - name: get-sources
-      taskRef:
-        name: git-clone
-        kind: ClusterTask
+      taskSpec:
+        steps:
+        - name: git-clone-step
+          image: alpine/git
+          args:
+            - clone
+            - "https://github.com/cloud-native-toolkit/deployer-cp4a-starter-sources.git"
+            - "$(workspaces.task-ws.path)/sources"
+        workspaces:
+          - name: task-ws
       workspaces:
-      - name: output
+      - name: task-ws
         workspace: ws
-      params:
-        - name: url
-          value: https://github.com/cloud-native-toolkit/deployer-cp4a-starter-sources.git
-        - name: revision
-          value: main
-        - name: subdirectory
-          value: sources
     - name: add-namespace
       taskRef:
         kind: Task
