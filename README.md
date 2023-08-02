@@ -8,16 +8,11 @@ https://www.ibm.com/docs/en/cloud-paks/cp-biz-automation/22.0.2?topic=deployment
 
 - Openshift Cluster with OpenShift Pipelines 1.8 installed
 
-## Tasks
-
-Currently uses oc client from tekton hub
-
-## Usage
-Uses sources files located in the source dir
-
 ###
 
-oc apply -f tekton.yaml to install configure service account and install tasks and pipeline
-oc create -f install-cb4ba-pipeline-run.yaml to kick off pipeline
+Find the version you would like to use by the folder name. I.E 22.0.x
 
-`oc apply -f tekton.yaml && oc create -f install-cb4ba-pipeline-run.yaml`
+oc apply -f cp4ba-pipeline.yaml to install configure service account and install tasks and pipeline
+oc create -f cb4ba-pipeline-run.yaml to kick off pipeline
+
+`oc apply -f cp4ba-pipeline.yaml && oc create -f cb4ba-pipeline-run.yaml`

@@ -10,7 +10,7 @@ spec:
       default: "22.0.2"
     - name: namespace
       type: string
-      default: "default"
+      default: "cp4ba-starter"
   tasks:
     - name: get-sources
       taskSpec:
@@ -260,7 +260,6 @@ spec:
               #!/usr/bin/env bash
               # Read the content of the YAML file and save it to a variable
               yaml_file=$(workspaces.oc-workspace.path)/sources/cp4ba.yaml
-              wget https://github.com/mikefarah/yq/releases/download/v4.33.3/yq_linux_amd64.tar.gz -O - | tar xz && mv yq_linux_amd64 /usr/bin/yq
               yq -e '.metadata.namespace = "$(params.namespace)"' -i $yaml_file
               yq -e '.spec.appVersion = "$(params.cp4ba-version)"' -i $yaml_file
               yaml_content=$(cat "$yaml_file")
@@ -285,19 +284,7 @@ spec:
             #!/usr/bin/env bash
             oc project $(params.namespace)
             SECONDS=0
-            echo "Waiting for cp4ba to deploy in $(params.namespace)"
-            status=$(oc get Cartridge/icp4ba -n $(params.namespace) -o jsonpath='{.status.conditions}' | jq '.[0].status')
-            while [[ $status != '"True"' ]]
-            do
-              status=$(oc get Cartridge/icp4ba -n $(params.namespace) -o jsonpath='{.status.conditions}' | jq '.[0].status')
-              ELAPSED="Elapsed time: $(($SECONDS / 3600))hrs $((($SECONDS / 60) % 60))min $(($SECONDS % 60))sec"
-              echo "Waiting for cp4ba to deploy ($ELAPSED)..."
-              sleep 90
-            done
-            ELAPSED="Elapsed time: $(($SECONDS / 3600))hrs $((($SECONDS / 60) % 60))min $(($SECONDS % 60))sec"
-            echo "Automation foundation deployment success! ($ELAPSED)"
-
-            echo "Now waiting on CP4BA to install... This could take up to 3 hours...."
+            echo "waiting on CP4BA to install... This could take up to 3 hours...."
             while true; do
               deploymentStatusJSON=$(oc get ICP4ACluster/icp4adeploy -n $(params.namespace) -o jsonpath={.status} | jq -c '[.conditions]')
               PrereqReady=$(echo $deploymentStatusJSON | jq '.[0][] | select(.type == "PrereqReady")')
@@ -332,8 +319,17 @@ spec:
               fi
               sleep 600
               done
-              echo "CP4BA Installed!"
-    - name: update-certs-2
+            echo "Waiting for cp4ba automation cartridge to deploy in $(params.namespace)"
+            status=$(oc get Cartridge/icp4ba -n $(params.namespace) -o jsonpath='{.status.conditions}' | jq '.[0].status')
+            while [[ $status != '"True"' ]]
+            do
+              status=$(oc get Cartridge/icp4ba -n $(params.namespace) -o jsonpath='{.status.conditions}' | jq '.[0].status')
+              echo "Waiting for cp4ba to deploy..."
+              sleep 90
+            done
+            echo "Automation foundation deployment success!"
+            echo "CP4BA Installed!"
+    - name: update-common-services-certs
       runAfter:
         - wait-for-deploy
       params:
@@ -342,22 +338,50 @@ spec:
       taskRef:
         kind: Task
         name: ibm-tls-certs
-    - name: get-login-info
-      taskRef:
-        kind: Task
-        name: ibm-pak
+    - name: update-cpd-certs
       runAfter:
-        - update-certs-2
+        - wait-for-deploy
       params:
-        - name: SCRIPT
-          value: |
+        - name: namespace
+          value: "$(params.namespace)"
+      taskSpec:
+        params:
+        - name: namespace
+        steps:
+        - name: install-certs-key
+          image: quay.io/openshift/origin-cli:4.10
+          script: |
             #!/usr/bin/env bash
-            oc project $(params.namespace) 
-            password=$(oc -n ibm-common-services get secret platform-auth-idp-credentials -o jsonpath='{.data.admin_password}' | base64 -d)
-            echo "Login info"
-            url=$(oc get route --no-headers -o custom-columns=NAME:.spec.host | grep "^cpd")
-            echo "url: https://$url"
-            echo "username: admin"
-            echo "password: $password"
+            echo "Getting certs from common services"
+            oc extract secret/$(oc get ingresscontroller.operator default -n openshift-ingress-operator -o jsonpath='{.spec.defaultCertificate.name}') -n openshift-ingress --to=. --keys=tls.crt,tls.key --confirm
+            echo "Updating IBM Automation Foundation certs"
+            oc create secret generic iaf-system-automationui-aui-zen-cert -n $(params.namespace) --from-file=tls.crt=tls.crt --from-file=tls.key=tls.key --dry-run=client -o yaml | oc apply -f -
+            echo "Refreshing route... this could take up to 30 mins"
+            oc delete pod -l app.kubernetes.io/component=ibm-nginx -n cp4ba-starter
+            oc wait pod -l app.kubernetes.io/component=ibm-nginx -n $(params.namespace) --for=condition=ready --timeout=30m
+    - name: get-login-info
+      runAfter:
+        - get-sources
+        - update-common-services-certs
+        - update-cpd-certs
+      params:
+        - name: namespace
+          value: "$(params.namespace)"
+      taskSpec:
+        params:
+          - name: namespace
+        steps:
+          - name: set-entitlement-key
+            image: quay.io/ibmtz/python3-oc
+            script: |
+              #!/usr/bin/env bash
+              export NAMESPACE=$(params.namespace) 
+              echo "Using namespace: $NAMESPACE"
+              python3 $(workspaces.task-ws.path)/sources/getLoginInfo.py
+        workspaces:
+          - name: task-ws
+      workspaces:
+      - name: task-ws
+        workspace: ws
   workspaces:
     - name: ws          
