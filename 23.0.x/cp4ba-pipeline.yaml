@@ -239,6 +239,7 @@ spec:
               deploymentStatusJSON=$(oc get ICP4ACluster/icp4adeploy -n $(params.namespace) -o jsonpath={.status} | jq -c '[.conditions]')
               PrereqReady=$(echo $deploymentStatusJSON | jq '.[0][] | select(.type == "PrereqReady")')
               Running=$(echo $deploymentStatusJSON | jq '.[0][] | select(.type == "Running")' )
+              Ready=$(echo $deploymentStatusJSON | jq '.[0][] | select(.type == "Ready")' )
               RunningStatus="False"
               ReadyStatus="False"
               PrereqReadyStatus="False"
@@ -249,10 +250,14 @@ spec:
               if [[ -n "$Running" ]]; then
                 RunningStatus=$(echo $Running | jq '.status')
               fi
+              if [[ -n "$Ready" ]]; then
+                ReadyStatus=$(echo $Ready | jq '.status')
+              fi
+
               echo "Running status: $RunningStatus"
               echo "PreReq status: $PrereqReadyStatus"
 
-              if [ $RunningStatus == '"True"' ] && [ $PrereqReadyStatus == '"True"' ]; then
+              if [ $ReadyStatus == '"True"' ] && [ $RunningStatus == '"True"' ] && [ $PrereqReadyStatus == '"True"' ]; then
                 # Code block to be executed if all three conditions are true
                 echo "All conditions are true."
                 break
