@@ -111,24 +111,28 @@ spec:
             - name: "ibm-entitlement-key"
             EOF
             oc adm policy add-scc-to-user anyuid -z ibm-cp4ba-anyuid
-    - name: get-cp4ba-yaml
+    - name: install-cp4ba-operator
       runAfter:
         - create-sa
         - get-sources
+        - add-operator-group
+        - set-retrieved-entitlement-key
       params:
         - name: cp4ba-version
           value: $(params.cp4ba-version)
+        - name: namespace
+          value: "$(params.namespace)"
       taskSpec:
         results:
           - name: CP4BAyamlFile
         params:
           - name: cp4ba-version
-            description: Enter your CP4BA version
-            type: string
+          - name: namespace
         steps:
           - name: get-marketplace-yaml
-            image: quay.io/congxdev/ibm-pak-ubi:latest
+            image: quay.io/ibmtz/ibm-pak-ubi:latest
             script: |
+              #!/usr/bin/env bash
               curl -s https://raw.githubusercontent.com/IBM/cloud-pak/master/repo/case/ibm-cp-automation/index.yaml > cp-index.yaml
               appVersion=$(params.cp4ba-version)
               version=$(yq eval '.versions | with_entries(select(.value.appVersion == "*'$appVersion'*")) | keys| .[-1]' cp-index.yaml)
@@ -148,48 +152,9 @@ spec:
 
               cp $currentDir/cert-kubernetes/descriptors/op-olm/catalog_source.yaml $(workspaces.task-ws.path)/catalog_source.yaml
               cat $(workspaces.task-ws.path)/catalog_source.yaml
-        workspaces:
-          - name: task-ws
-      workspaces:
-        - name: task-ws
-          workspace: ws
-    - name: add-cp4ba-to-marketplace
-      runAfter:
-        - get-cp4ba-yaml
-        - add-operator-group
-        - set-retrieved-entitlement-key
-      taskSpec:
-        steps:
-        - name: script
-          image: quay.io/openshift/origin-cli:4.10
-          script: |
-            #!/usr/bin/env bash
-            yaml_file=$(workspaces.oc-workspace.path)/catalog_source.yaml 
-            yaml_content=$(cat "$yaml_file") 
-            echo "$yaml_content"
-            oc apply -f $(workspaces.oc-workspace.path)/catalog_source.yaml 
-        workspaces:
-          - name: oc-workspace
-      workspaces:
-        - name: oc-workspace
-          workspace: ws
-    - name: install-cp4ba-operator
-      runAfter:
-        - add-cp4ba-to-marketplace
-      params:
-        - name: cp4ba-version
-          value: "$(params.cp4ba-version)"
-        - name: namespace
-          value: "$(params.namespace)"
-      taskSpec:
-        params:
-          - name: cp4ba-version
-          - name: namespace
-        steps:
-          - name: script
-            image: quay.io/congxdev/ibm-pak-ubi:latest
-            script: |
-              #!/usr/bin/env bash
+
+              oc apply -f $(workspaces.task-ws.path)/catalog_source.yaml 
+
               # Read the content of the YAML file and save it to a variable
               decimal=$(params.cp4ba-version)
 
@@ -200,32 +165,15 @@ spec:
               # Format into "v<major>.<minor>"
               channel="v${major}.${minor}"
               echo "$channel"
-              yaml_file=$(workspaces.oc-workspace.path)/sources/subscription.yaml
+              yaml_file=$(workspaces.task-ws.path)/sources/subscription.yaml
               yq -e ".spec.channel = \"$channel\"" -i $yaml_file
               yq -e '.metadata.namespace = "$(params.namespace)"' -i $yaml_file
               yaml_content=$(cat "$yaml_file")
               echo "$yaml_content"
               # Print the content to verify
               echo "$yaml_content" | oc apply -f -
-        workspaces:
-          - name: oc-workspace
-      workspaces:
-        - name: oc-workspace
-          workspace: ws
-    - name: wait-for-operator
-      runAfter:
-        - install-cp4ba-operator
-      params:
-        - name: namespace
-          value: "$(params.namespace)"
-      taskSpec:
-        params:
-          - name: namespace
-        steps:
-          - name: script
-            image: quay.io/congxdev/ibm-pak-ubi:latest
-            script: |
-              #!/usr/bin/env bash
+
+              # wait for operator to be ready
               namespace="$(params.namespace)"
               echo "Waiting for operator to be ready..."
               cp4baOperator=$(oc get csv -n "$namespace" --no-headers -o custom-columns=NAME:.metadata.name | grep "ibm-cp4a-operator.*")
@@ -233,11 +181,19 @@ spec:
               while [[ -z $(oc get csv/$cp4baOperator -n "$namespace" -o 'jsonpath={.status.phase}' | grep 'Succeeded') ]]; do
                   echo "Waiting for CSV to reach 'Succeeded' condition..."
                   sleep 10
+                  cp4baOperator=$(oc get csv -n "$namespace" --no-headers -o custom-columns=NAME:.metadata.name | grep "ibm-cp4a-operator.*")
               done
               echo "Done!"
+              # apply the need operators
+              bash $currentDir/cert-kubernetes/scripts/cpfs/installer_scripts/cp3pt0-deployment/setup_singleton.sh --enable-licensing --license-accept
+        workspaces:
+          - name: task-ws
+      workspaces:
+        - name: task-ws
+          workspace: ws
     - name: deploy-cp4ba
       runAfter:
-        - wait-for-operator
+        - install-cp4ba-operator
       params:
         - name: cp4ba-version
           value: "$(params.cp4ba-version)"
@@ -249,7 +205,7 @@ spec:
           - name: namespace
         steps:
           - name: script
-            image: quay.io/congxdev/ibm-pak-ubi:latest
+            image: quay.io/ibmtz/ibm-pak-ubi:latest
             script: |
               #!/usr/bin/env bash
               # Read the content of the YAML file and save it to a variable
@@ -283,7 +239,6 @@ spec:
               deploymentStatusJSON=$(oc get ICP4ACluster/icp4adeploy -n $(params.namespace) -o jsonpath={.status} | jq -c '[.conditions]')
               PrereqReady=$(echo $deploymentStatusJSON | jq '.[0][] | select(.type == "PrereqReady")')
               Running=$(echo $deploymentStatusJSON | jq '.[0][] | select(.type == "Running")' )
-              Ready=$(echo $deploymentStatusJSON | jq '.[0][] | select(.type == "Ready")' )
               RunningStatus="False"
               ReadyStatus="False"
               PrereqReadyStatus="False"
@@ -294,15 +249,10 @@ spec:
               if [[ -n "$Running" ]]; then
                 RunningStatus=$(echo $Running | jq '.status')
               fi
-              if [[ -n "$Ready" ]]; then
-                ReadyStatus=$(echo $Ready | jq '.status')
-              fi
-
               echo "Running status: $RunningStatus"
-              echo "Ready status: $ReadyStatus"
               echo "PreReq status: $PrereqReadyStatus"
 
-              if [ $ReadyStatus == '"True"' ] && [ $RunningStatus == '"True"' ] && [ $PrereqReadyStatus == '"True"' ]; then
+              if [ $RunningStatus == '"True"' ] && [ $PrereqReadyStatus == '"True"' ]; then
                 # Code block to be executed if all three conditions are true
                 echo "All conditions are true."
                 break
