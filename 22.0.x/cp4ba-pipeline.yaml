@@ -127,7 +127,7 @@ spec:
             type: string
         steps:
           - name: get-marketplace-yaml
-            image: quay.io/congxdev/ibm-pak-ubi:latest
+            image: quay.io/ibmtz/ibm-pak-ubi:latest
             script: |
               curl -s https://raw.githubusercontent.com/IBM/cloud-pak/master/repo/case/ibm-cp-automation/index.yaml > cp-index.yaml
               appVersion=$(params.cp4ba-version)
@@ -187,7 +187,7 @@ spec:
           - name: namespace
         steps:
           - name: script
-            image: quay.io/congxdev/ibm-pak-ubi:latest
+            image: quay.io/ibmtz/ibm-pak-ubi:latest
             script: |
               #!/usr/bin/env bash
               # Read the content of the YAML file and save it to a variable
@@ -223,7 +223,7 @@ spec:
           - name: namespace
         steps:
           - name: script
-            image: quay.io/congxdev/ibm-pak-ubi:latest
+            image: quay.io/ibmtz/ibm-pak-ubi:latest
             script: |
               #!/usr/bin/env bash
               namespace="$(params.namespace)"
@@ -255,7 +255,7 @@ spec:
           - name: namespace
         steps:
           - name: script
-            image: quay.io/congxdev/ibm-pak-ubi:latest
+            image: quay.io/ibmtz/ibm-pak-ubi:latest
             script: |
               #!/usr/bin/env bash
               # Read the content of the YAML file and save it to a variable
@@ -304,8 +304,8 @@ spec:
                 ReadyStatus=$(echo $Ready | jq '.status')
               fi
 
-              echo "Running status: $RunningStatus"
               echo "Ready status: $ReadyStatus"
+              echo "Running status: $RunningStatus"
               echo "PreReq status: $PrereqReadyStatus"
 
               if [ $ReadyStatus == '"True"' ] && [ $RunningStatus == '"True"' ] && [ $PrereqReadyStatus == '"True"' ]; then
@@ -357,7 +357,7 @@ spec:
             echo "Updating IBM Automation Foundation certs"
             oc create secret generic iaf-system-automationui-aui-zen-cert -n $(params.namespace) --from-file=tls.crt=tls.crt --from-file=tls.key=tls.key --dry-run=client -o yaml | oc apply -f -
             echo "Refreshing route... this could take up to 30 mins"
-            oc delete pod -l app.kubernetes.io/component=ibm-nginx -n cp4ba-starter
+            oc delete pod -l app.kubernetes.io/component=ibm-nginx -n $(params.namespace)
             oc wait pod -l app.kubernetes.io/component=ibm-nginx -n $(params.namespace) --for=condition=ready --timeout=30m
     - name: get-login-info
       runAfter:
