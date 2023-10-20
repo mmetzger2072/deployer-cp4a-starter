@@ -13,19 +13,23 @@ spec:
       default: "cp4ba-starter"
   tasks:
     - name: get-sources
-      taskSpec:
-        steps:
-        - name: git-clone-step
-          image: alpine/git
-          args:
-            - clone
-            - "https://github.com/cloud-native-toolkit/deployer-cp4a-starter-sources.git"
-            - "$(workspaces.task-ws.path)/sources"
-        workspaces:
-          - name: task-ws
+      params:
+        - name: url
+          value: https://github.com/cloud-native-toolkit/deployer-cp4a-starter-sources
+        - name: subdirectory
+          value: sources
       workspaces:
-      - name: task-ws
+      - name: output
         workspace: ws
+      taskRef:
+        resolver: git
+        params:
+          - name: url
+            value: https://github.com/tektoncd/catalog.git
+          - name: revision
+            value: main
+          - name: pathInRepo
+            value: task/git-clone/0.9/git-clone.yaml
     - name: add-namespace
       taskRef:
         kind: Task
