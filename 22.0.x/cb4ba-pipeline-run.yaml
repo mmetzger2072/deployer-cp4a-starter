@@ -5,8 +5,8 @@ metadata:
   namespace: default
 spec:
   timeouts:
-    pipeline: "4h30m00s"
-    tasks: "4h29m59s"
+    pipeline: "6h30m00s"
+    tasks: "6h29m59s"
   pipelineRef:
     name: cp4ba-deploy
   params:
@@ -23,6 +23,3 @@ spec:
           resources:
             requests:
               storage: 1Gi
-  podTemplate:
-    securityContext:
-      fsGroup: 65532
