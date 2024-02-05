@@ -247,7 +247,8 @@ spec:
 
               echo "Running status: $RunningStatus"
               echo "PreReq status: $PrereqReadyStatus"
-
+              echo "Ready status: $ReadyStatus"
+              
               if [ $ReadyStatus == '"True"' ] && [ $RunningStatus == '"True"' ] && [ $PrereqReadyStatus == '"True"' ]; then
                 # Code block to be executed if all three conditions are true
                 echo "All conditions are true."
