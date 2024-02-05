@@ -148,7 +148,7 @@ spec:
               tar -xvf $currentDir/ibm-cp-automation/inventory/cp4aOperatorSdk/files/deploy/crs/$fileName
 
               cp $currentDir/cert-kubernetes/descriptors/op-olm/catalog_source.yaml $(workspaces.ws.path)/catalog_source.yaml
-              cat $(workspaces.task-ws.path)/catalog_source.yaml
+              cat $(workspaces.ws.path)/catalog_source.yaml
 
               oc apply -f $(workspaces.ws.path)/catalog_source.yaml 
 
