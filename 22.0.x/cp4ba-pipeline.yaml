@@ -20,10 +20,9 @@ spec:
           args:
             - clone
             - "https://github.com/cloud-native-toolkit/deployer-cp4a-starter-sources.git"
-            - "$(workspaces.output.path)/sources"
+            - "$(workspaces.ws.output.path)/sources"
         workspaces:
-          - name: output
-            workspace: ws
+          - name: ws
     - name: add-namespace
       taskRef:
         kind: Task
@@ -144,13 +143,10 @@ spec:
 
               tar -xvf $currentDir/ibm-cp-automation/inventory/cp4aOperatorSdk/files/deploy/crs/$fileName
 
-              cp $currentDir/cert-kubernetes/descriptors/op-olm/catalog_source.yaml $(workspaces.task-ws.path)/catalog_source.yaml
-              cat $(workspaces.task-ws.path)/catalog_source.yaml
-        workspaces:
-          - name: task-ws
+              cp $currentDir/cert-kubernetes/descriptors/op-olm/catalog_source.yaml $(workspaces.ws.path)/catalog_source.yaml
+              cat $(workspaces.ws.path)/catalog_source.yaml
       workspaces:
-        - name: task-ws
-          workspace: ws
+        - name: ws
     - name: add-cp4ba-to-marketplace
       runAfter:
         - get-cp4ba-yaml
@@ -162,15 +158,12 @@ spec:
           image: quay.io/openshift/origin-cli:4.10
           script: |
             #!/usr/bin/env bash
-            yaml_file=$(workspaces.oc-workspace.path)/catalog_source.yaml 
+            yaml_file=$(workspaces.ws.path)/catalog_source.yaml 
             yaml_content=$(cat "$yaml_file") 
             echo "$yaml_content"
-            oc apply -f $(workspaces.oc-workspace.path)/catalog_source.yaml 
-        workspaces:
-          - name: oc-workspace
+            oc apply -f $(workspaces.ws.path)/catalog_source.yaml 
       workspaces:
-        - name: oc-workspace
-          workspace: ws
+        - name: ws
     - name: install-cp4ba-operator
       runAfter:
         - add-cp4ba-to-marketplace
@@ -198,18 +191,15 @@ spec:
               # Format into "v<major>.<minor>"
               channel="v${major}.${minor}"
               echo "$channel"
-              yaml_file=$(workspaces.oc-workspace.path)/sources/subscription.yaml
+              yaml_file=$(workspaces.ws.path)/sources/subscription.yaml
               yq -e ".spec.channel = \"$channel\"" -i $yaml_file
               yq -e '.metadata.namespace = "$(params.namespace)"' -i $yaml_file
               yaml_content=$(cat "$yaml_file")
               echo "$yaml_content"
               # Print the content to verify
               echo "$yaml_content" | oc apply -f -
-        workspaces:
-          - name: oc-workspace
       workspaces:
-        - name: oc-workspace
-          workspace: ws
+        - name: ws
     - name: wait-for-operator
       runAfter:
         - install-cp4ba-operator
@@ -257,18 +247,15 @@ spec:
             script: |
               #!/usr/bin/env bash
               # Read the content of the YAML file and save it to a variable
-              yaml_file=$(workspaces.oc-workspace.path)/sources/cp4ba.yaml
+              yaml_file=$(workspaces.ws.path)/sources/cp4ba.yaml
               yq -e '.metadata.namespace = "$(params.namespace)"' -i $yaml_file
               yq -e '.spec.appVersion = "$(params.cp4ba-version)"' -i $yaml_file
               yaml_content=$(cat "$yaml_file")
               echo "$yaml_content"
               # Print the content to verify
               echo "$yaml_content" | oc apply -f -
-        workspaces:
-          - name: oc-workspace
       workspaces:
-        - name: oc-workspace
-          workspace: ws
+        - name: ws
     - name: wait-for-deploy
       taskRef:
         kind: Task
@@ -375,11 +362,8 @@ spec:
               #!/usr/bin/env bash
               export NAMESPACE=$(params.namespace) 
               echo "Using namespace: $NAMESPACE"
-              python3 $(workspaces.task-ws.path)/sources/getLoginInfo.py
-        workspaces:
-          - name: task-ws
+              python3 $(workspaces.ws.task-ws.path)/sources/getLoginInfo.py
       workspaces:
-      - name: task-ws
-        workspace: ws
+      - name: ws
   workspaces:
     - name: ws          
