@@ -305,7 +305,15 @@ spec:
             oc patch ZenService iaf-zen-cpdservice --type='json' -p='[{"op": "add", "path": "/spec/zenCustomRoute","value":{"route_secret":"cpd-route-tls-secret","route_reencrypt":true}}]' -n $(params.namespace)
 
             echo "Waiting for certs to update..."
-            sleep 300
+            sleep 600
+
+            status=$(oc get ZenService iaf-zen-cpdservice -n cp4ba-starter -o jsonpath={.status.zenStatus})
+            while [[ -z $(echo $status | grep 'Completed') ]]; do
+                echo "Waiting for ZenService iaf-zen-cpdservice to reach 'Completed' condition..."
+                sleep 30
+                status=$(oc get ZenService iaf-zen-cpdservice -n cp4ba-starter -o jsonpath={.status.zenStatus})
+            done
+
             echo "Certs updated!"
 
     - name: get-login-info
