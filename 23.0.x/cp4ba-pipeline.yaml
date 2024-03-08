@@ -302,7 +302,11 @@ spec:
             --from-file=ca.crt=ca.crt \
             --dry-run=client -o yaml | oc apply -f -
 
-            oc patch ZenService iaf-zen-cpdservice --type='json' -p='[\{"op": "add", "path": "/spec/zenCustomRoute","value":{"route_secret":"cpd-route-tls-secret","route_reencrypt":true}}]' -n $(params.namespace)
+            oc patch ZenService iaf-zen-cpdservice --type='json' -p='[{"op": "add", "path": "/spec/zenCustomRoute","value":{"route_secret":"cpd-route-tls-secret","route_reencrypt":true}}]' -n $(params.namespace)
+
+            echo "Waiting for certs to update..."
+            sleep 300
+            echo "Certs updated!"
 
     - name: get-login-info
       runAfter:
