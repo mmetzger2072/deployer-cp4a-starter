@@ -311,7 +311,7 @@ spec:
             status=$(oc get ZenService iaf-zen-cpdservicef -n $(params.namespace) -o jsonpath={.status.zenStatus} --ignore-not-found)
             while [[ -z $(echo $status | grep 'Completed') ]]; do
               echo "Waiting for ZenService iaf-zen-cpdservice to be created..."
-              sleep 30
+              sleep 120
               status=$(oc get ZenService iaf-zen-cpdservice -n $(params.namespace) -o jsonpath={.status.zenStatus} --ignore-not-found)
             done
 
