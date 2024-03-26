@@ -227,7 +227,8 @@ spec:
             SECONDS=0
             echo "waiting on CP4BA to install... This could take up to 3 hours...."
             while true; do
-              deploymentStatusJSON=$(oc get ICP4ACluster/icp4adeploy -n $(params.namespace) -o jsonpath={.status} | jq -c '[.conditions]')
+              deploymentStatusJSON=$(oc get ICP4ACluster/icp4adeploy -o jsonpath={.status} | jq -c '[.conditions]')
+              configMap=$(oc get configmap icp4adeploy-cp4ba-access-info -o jsonpath={.metadata.name} --ignore-not-found)
               PrereqReady=$(echo $deploymentStatusJSON | jq '.[0][] | select(.type == "PrereqReady")')
               Running=$(echo $deploymentStatusJSON | jq '.[0][] | select(.type == "Running")' )
               Ready=$(echo $deploymentStatusJSON | jq '.[0][] | select(.type == "Ready")' )
@@ -245,6 +246,10 @@ spec:
                 ReadyStatus=$(echo $Ready | jq '.status')
               fi
 
+              if [[ $configMap ]]; then
+                ReadyStatus='"True"'
+              fi
+
               echo "Running status: $RunningStatus"
               echo "PreReq status: $PrereqReadyStatus"
               echo "Ready status: $ReadyStatus"
@@ -258,6 +263,7 @@ spec:
                 echo "At least one condition is false... waiting for deployment...."
                 echo "Checking back in 10 mins...."
               fi
+
               sleep 600
               done
             echo "CP4BA Installed!"
@@ -272,7 +278,7 @@ spec:
         name: ibm-tls-certs
     - name: update-cpd-certs
       runAfter:
-        - wait-for-deploy
+        - deploy-cp4ba
       params:
         - name: namespace
           value: "$(params.namespace)"
@@ -302,16 +308,24 @@ spec:
             --from-file=ca.crt=ca.crt \
             --dry-run=client -o yaml | oc apply -f -
 
+            status=$(oc get ZenService iaf-zen-cpdservicef -n $(params.namespace) -o jsonpath={.status.zenStatus} --ignore-not-found)
+            while [[ -z $(echo $status | grep 'Completed') ]]; do
+              echo "Waiting for ZenService iaf-zen-cpdservice to be created..."
+              sleep 120
+              status=$(oc get ZenService iaf-zen-cpdservice -n $(params.namespace) -o jsonpath={.status.zenStatus} --ignore-not-found)
+            done
+
+            echo "ZenService created! Now updating..."
             oc patch ZenService iaf-zen-cpdservice --type='json' -p='[{"op": "add", "path": "/spec/zenCustomRoute","value":{"route_secret":"cpd-route-tls-secret","route_reencrypt":true}}]' -n $(params.namespace)
 
             echo "Waiting for certs to update..."
             sleep 600
 
-            status=$(oc get ZenService iaf-zen-cpdservice -n cp4ba-starter -o jsonpath={.status.zenStatus})
+            status=$(oc get ZenService iaf-zen-cpdservice -n $(params.namespace) -o jsonpath={.status.zenStatus})
             while [[ -z $(echo $status | grep 'Completed') ]]; do
                 echo "Waiting for ZenService iaf-zen-cpdservice to reach 'Completed' condition..."
                 sleep 30
-                status=$(oc get ZenService iaf-zen-cpdservice -n cp4ba-starter -o jsonpath={.status.zenStatus})
+                status=$(oc get ZenService iaf-zen-cpdservice -n $(params.namespace) -o jsonpath={.status.zenStatus})
             done
 
             echo "Certs updated!"
@@ -338,4 +352,4 @@ spec:
       workspaces:
       - name: ws
   workspaces:
-    - name: ws 
+    - name: ws          
