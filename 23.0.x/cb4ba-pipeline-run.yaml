@@ -5,8 +5,8 @@ metadata:
   namespace: default
 spec:
   timeouts:
-    pipeline: "6h30m00s"
-    tasks: "6h29m59s"
+    pipeline: "8h30m00s"
+    tasks: "8h29m59s"
   pipelineRef:
     name: cp4ba-deploy
   params:

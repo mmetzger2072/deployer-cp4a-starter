@@ -1,3 +1,5 @@
 /sources/cert-kubernetes
 /sources/ibm-cp-automation
 /.DS_Store
+deployer-cp4a-starter/23.0.x/cert-kubernetes
+deployer-cp4a-starter/23.0.x/ibm-cp-automation
