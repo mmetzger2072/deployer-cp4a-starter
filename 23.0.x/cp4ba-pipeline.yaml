@@ -282,6 +282,7 @@ spec:
       params:
         - name: namespace
           value: "$(params.namespace)"
+      timeout: "2h00m"
       taskSpec:
         params:
         - name: namespace
