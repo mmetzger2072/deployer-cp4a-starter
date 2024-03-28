@@ -5,12 +5,14 @@ metadata:
   namespace: default
 spec:
   params:
-    - name: cp4ba-version
+    - name: cp4ba-case
       type: string
-      default: "23.0.2"
+      default: "5.1.2"
     - name: namespace
       type: string
       default: "cp4ba-starter"
+  workspaces:
+    - name: ws
   tasks:
     - name: get-sources
       taskSpec:
@@ -35,25 +37,6 @@ spec:
             apiVersion: v1
             metadata:
               name: $(params.namespace)
-            EOF
-    - name: add-operator-group
-      runAfter:
-        - add-namespace
-      taskRef:
-        kind: Task
-        name: ibm-pak
-      params:
-        - name: SCRIPT
-          value: |
-            oc apply -f - <<EOF 
-            apiVersion: operators.coreos.com/v1alpha2
-            kind: OperatorGroup
-            metadata:
-              name: ibm-cp4a-operator-catalog-group
-              namespace: $(params.namespace)
-            spec:
-              targetNamespaces:
-              - $(params.namespace)
             EOF
     - name: get-ibm-entitlement-key
       params:
@@ -112,35 +95,33 @@ spec:
       runAfter:
         - create-sa
         - get-sources
-        - add-operator-group
         - set-retrieved-entitlement-key
       params:
-        - name: cp4ba-version
-          value: $(params.cp4ba-version)
+        - name: cp4ba-case
+          value: $(params.cp4ba-case)
         - name: namespace
           value: "$(params.namespace)"
       taskSpec:
         results:
           - name: CP4BAyamlFile
         params:
-          - name: cp4ba-version
+          - name: cp4ba-case
           - name: namespace
         steps:
           - name: get-marketplace-yaml
             image: quay.io/ibmtz/ibm-pak-ubi:latest
             script: |
               #!/usr/bin/env bash
+              case=$(params.cp4ba-case)
+
               curl -s https://raw.githubusercontent.com/IBM/cloud-pak/master/repo/case/ibm-cp-automation/index.yaml > cp-index.yaml
-              appVersion=$(params.cp4ba-version)
-              version=$(yq eval '.versions | with_entries(select(.value.appVersion == "*'$appVersion'*")) | keys| .[-1]' cp-index.yaml)
+              version=$(yq e ".versions.\"$case\".appVersion" cp-index.yaml)
 
-              version="${version#"${version%%[![:space:]]*}"}"
-              version="${version%"${version##*[![:space:]]}"}"
-              echo "Latest case $version for appVersion $appVersion"
+              echo "Using case $case with appVersion $version"
 
-              curl -L -O "https://github.com/IBM/cloud-pak/raw/master/repo/case/ibm-cp-automation/$version/ibm-cp-automation-$version.tgz"
+              curl -L -O "https://github.com/IBM/cloud-pak/raw/master/repo/case/ibm-cp-automation/$case/ibm-cp-automation-$case.tgz"
 
-              tar -xvzf "ibm-cp-automation-$version.tgz"
+              tar -xvzf "ibm-cp-automation-$case.tgz"
 
               currentDir=$(pwd)
               fileName=$(ls -p $currentDir/ibm-cp-automation/inventory/cp4aOperatorSdk/files/deploy/crs | grep -v /)
@@ -148,27 +129,26 @@ spec:
               tar -xvf $currentDir/ibm-cp-automation/inventory/cp4aOperatorSdk/files/deploy/crs/$fileName
 
               cp $currentDir/cert-kubernetes/descriptors/op-olm/catalog_source.yaml $(workspaces.ws.path)/catalog_source.yaml
-              cat $(workspaces.ws.path)/catalog_source.yaml
+              cp $currentDir/cert-kubernetes/descriptors/op-olm/subscription.yaml $(workspaces.ws.path)/cp4ba-subscription.yaml
+              cp $currentDir/cert-kubernetes/descriptors/op-olm/operator_group.yaml $(workspaces.ws.path)/operator_group.yaml
 
+              operatorGroupFile=$(workspaces.ws.path)/operator_group.yaml
+              yq -e '.metadata.namespace = "$(params.namespace)"' -i $operatorGroupFile
+              yq -e '.spec.targetNamespaces[0] = "$(params.namespace)"' -i $operatorGroupFile
+
+              cat $(workspaces.ws.path)/operator_group.yaml
+              oc apply -f $(workspaces.ws.path)/operator_group.yaml
+
+              cat $(workspaces.ws.path)/catalog_source.yaml
               oc apply -f $(workspaces.ws.path)/catalog_source.yaml 
 
-              # Read the content of the YAML file and save it to a variable
-              decimal=$(params.cp4ba-version)
+              subscriptionFile=$(workspaces.ws.path)/cp4ba-subscription.yaml
 
-              # Extract major and minor versions
-              major=$(echo "$decimal" | cut -d '.' -f 1)
-              minor=$(echo "$decimal" | cut -d '.' -f 3)
+              yq -e '.metadata.namespace = "$(params.namespace)"' -i $subscriptionFile
 
-              # Format into "v<major>.<minor>"
-              channel="v${major}.${minor}"
-              echo "$channel"
-              yaml_file=$(workspaces.ws.path)/sources/subscription.yaml
-              yq -e ".spec.channel = \"$channel\"" -i $yaml_file
-              yq -e '.metadata.namespace = "$(params.namespace)"' -i $yaml_file
-              yaml_content=$(cat "$yaml_file")
-              echo "$yaml_content"
-              # Print the content to verify
-              echo "$yaml_content" | oc apply -f -
+              cat $(workspaces.ws.path)/cp4ba-subscription.yaml
+
+              oc apply -f $(workspaces.ws.path)/cp4ba-subscription.yaml
 
               # wait for operator to be ready
               namespace="$(params.namespace)"
@@ -182,6 +162,7 @@ spec:
               done
               echo "Done!"
               # apply the need operators
+              oc project $(params.namespace)
               bash $currentDir/cert-kubernetes/scripts/cpfs/installer_scripts/cp3pt0-deployment/setup_singleton.sh --enable-licensing --license-accept
       workspaces:
         - name: ws
@@ -189,13 +170,13 @@ spec:
       runAfter:
         - install-cp4ba-operator
       params:
-        - name: cp4ba-version
-          value: "$(params.cp4ba-version)"
+        - name: cp4ba-case
+          value: "$(params.cp4ba-case)"
         - name: namespace
           value: "$(params.namespace)"
       taskSpec:
         params:
-          - name: cp4ba-version
+          - name: cp4ba-case
           - name: namespace
         steps:
           - name: script
@@ -203,9 +184,14 @@ spec:
             script: |
               #!/usr/bin/env bash
               # Read the content of the YAML file and save it to a variable
+              case=$(params.cp4ba-case)
+
+              curl -s https://raw.githubusercontent.com/IBM/cloud-pak/master/repo/case/ibm-cp-automation/index.yaml > cp-index.yaml
+              version=$(yq e ".versions.\"$case\".appVersion" cp-index.yaml)
+
               yaml_file=$(workspaces.ws.path)/sources/cp4ba.yaml
               yq -e '.metadata.namespace = "$(params.namespace)"' -i $yaml_file
-              yq -e '.spec.appVersion = "$(params.cp4ba-version)"' -i $yaml_file
+              yq -e '.spec.appVersion = "23.0.2"' -i $yaml_file
               yaml_content=$(cat "$yaml_file")
               echo "$yaml_content"
               # Print the content to verify
@@ -213,10 +199,11 @@ spec:
       workspaces:
         - name: ws
     - name: wait-for-deploy
+      retries: 5
       taskRef:
         kind: Task
         name: ibm-pak
-      timeout: "5h15m"
+      timeout: "5h00m00s"
       runAfter:
         - deploy-cp4ba
       params:
@@ -225,7 +212,7 @@ spec:
             #!/usr/bin/env bash
             oc project $(params.namespace)
             SECONDS=0
-            echo "waiting on CP4BA to install... This could take up to 3 hours...."
+            echo "waiting on CP4BA to install... This could take up to 6 hours...."
             while true; do
               deploymentStatusJSON=$(oc get ICP4ACluster/icp4adeploy -o jsonpath={.status} | jq -c '[.conditions]')
               configMap=$(oc get configmap icp4adeploy-cp4ba-access-info -o jsonpath={.metadata.name} --ignore-not-found)
@@ -239,15 +226,13 @@ spec:
               if [[ -n "$PrereqReady" ]]; then
                 PrereqReadyStatus=$(echo $PrereqReady | jq '.status')
               fi
+
               if [[ -n "$Running" ]]; then
                 RunningStatus=$(echo $Running | jq '.status')
               fi
+
               if [[ -n "$Ready" ]]; then
                 ReadyStatus=$(echo $Ready | jq '.status')
-              fi
-
-              if [[ $configMap ]]; then
-                ReadyStatus='"True"'
               fi
 
               echo "Running status: $RunningStatus"
@@ -268,6 +253,7 @@ spec:
               done
             echo "CP4BA Installed!"
     - name: update-common-services-certs
+      retries: 5
       runAfter:
         - wait-for-deploy
       params:
@@ -330,7 +316,6 @@ spec:
             done
 
             echo "Certs updated!"
-
     - name: get-login-info
       runAfter:
         - get-sources
@@ -352,5 +337,52 @@ spec:
               python3 $(workspaces.ws.path)/sources/getLoginInfo.py
       workspaces:
       - name: ws
-  workspaces:
-    - name: ws          
+  finally:
+    - name: cleanup-failed-install
+      retries: 5
+      params:
+        - name: cp4ba-case
+          value: "$(params.cp4ba-case)"
+        - name: namespace
+          value: "$(params.namespace)"
+        - name: taskStatus
+          value: "$(tasks.status)"
+      taskSpec:
+        params:
+          - name: cp4ba-case
+          - name: namespace
+          - name: taskStatus
+        steps:
+          - name: script
+            image: quay.io/ibmtz/ibm-pak-ubi:latest
+            script: |
+              #!/usr/bin/env bash
+
+              if [ $(params.taskStatus) == "Succeeded" ]; then
+                echo "all tasks are successful. No need to cleanup."
+                exit 0
+              fi
+
+              oc project $(params.namespace)
+              echo "CP4BA failed to install in the correct amount of time... Cleaning up"
+  
+              echo "Deleting ICP4ACluster/icp4adeploy"
+              oc delete ICP4ACluster/icp4adeploy --ignore-not-found
+  
+              case=$(params.cp4ba-case)
+              curl -s https://raw.githubusercontent.com/IBM/cloud-pak/master/repo/case/ibm-cp-automation/index.yaml > cp-index.yaml
+              version=$(yq e ".versions.\"$case\".appVersion" cp-index.yaml)
+              echo "Using case $case with appVersion $version"
+              curl -L -O "https://github.com/IBM/cloud-pak/raw/master/repo/case/ibm-cp-automation/$case/ibm-cp-automation-$case.tgz"
+              tar -xvzf "ibm-cp-automation-$case.tgz"
+              
+              currentDir=$(pwd)
+              fileName=$(ls -p $currentDir/ibm-cp-automation/inventory/cp4aOperatorSdk/files/deploy/crs | grep -v /)
+              tar -xvf $currentDir/ibm-cp-automation/inventory/cp4aOperatorSdk/files/deploy/crs/$fileName
+  
+              bash $currentDir/cert-kubernetes/scripts/deleteOperator.sh -n $(params.namespace)
+              printf 'y' | bash $currentDir/cert-kubernetes/scripts/cp4a-uninstall-clean-up.sh
+              echo "CP4BA uninstall successfully. Please rerun this pipeline to reinstall."
+      workspaces:
+        - name: ws         
+          workspace: ws
