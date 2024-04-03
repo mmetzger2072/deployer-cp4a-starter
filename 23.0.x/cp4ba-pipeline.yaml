@@ -362,6 +362,11 @@ spec:
   
               bash $currentDir/cert-kubernetes/scripts/deleteOperator.sh -n $(params.namespace)
               printf 'y' | bash $currentDir/cert-kubernetes/scripts/cp4a-uninstall-clean-up.sh
+
+              echo "Deleting namepspace"
+              oc delete project $(params.namespace)
+              echo "Waiting for project to fully delete..."
+              sleep 180
               echo "CP4BA uninstall successfully. Please rerun this pipeline to reinstall."
       workspaces:
         - name: ws         
