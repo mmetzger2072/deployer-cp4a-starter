@@ -203,7 +203,7 @@ spec:
       taskRef:
         kind: Task
         name: ibm-pak
-      timeout: "5h00m00s"
+      timeout: "6h00m00s"
       runAfter:
         - deploy-cp4ba
       params:
