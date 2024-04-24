@@ -18,11 +18,10 @@ spec:
       taskSpec:
         steps:
         - name: git-clone-step
-          image: alpine/git
-          args:
-            - clone
-            - "https://github.com/cloud-native-toolkit/deployer-cp4a-starter-sources.git"
-            - "$(workspaces.ws.path)/sources"
+          image: quay.io/ibmtz/ibm-pak-ubi:latest
+          script: |
+            #!/usr/bin/env bash
+            git clone https://github.com/cloud-native-toolkit/deployer-cp4a-starter-sources.git $(workspaces.ws.path)/sources
         workspaces:
           - name: ws
     - name: add-namespace
