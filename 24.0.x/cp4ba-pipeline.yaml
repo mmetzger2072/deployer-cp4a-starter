@@ -62,7 +62,7 @@ spec:
           - name: namespace
         steps:
           - name: set-entitlement-key
-            image: quay.io/openshift/origin-cli:4.10
+            image: quay.io/openshift/origin-cli:4.14
             script: |
               #!/usr/bin/env bash
               oc get secret "ibm-entitlement-key" -n $(params.namespace)
@@ -263,7 +263,7 @@ spec:
         - name: namespace
         steps:
         - name: install-certs-key
-          image: quay.io/openshift/origin-cli:4.10
+          image: quay.io/openshift/origin-cli:4.14
           script: |
             #!/usr/bin/env bash
             echo "Getting certs from common services"
@@ -305,6 +305,68 @@ spec:
             done
 
             echo "Certs updated!"
+    - name: get-watsonxai-key
+      runAfter: 
+        - wait-for-deploy
+      params:
+        - name: KEY_ID
+          value: 7a84b1ae-859f-ad75-8ca9-e003807b0552
+        - name: SECRETS_MANAGER_ENDPOINT_URL
+          value: >-
+            https://afa20521-cd75-4864-843f-e59fd0ffd49d.us-south.secrets-manager.appdomain.cloud
+      taskRef:
+        kind: Task
+        name: ibmcloud-secrets-manager-get
+    - name: set-retrieved-watson-key
+      runAfter:
+        - get-watsonxai-key
+      params:
+        - name: watsonxai-key
+          value: $(tasks.get-watsonxai-key.results.secret-value)
+      taskSpec:
+        params:
+          - name: watsonxai-key
+        steps:
+          - name: set-watsonxai-key
+            image: quay.io/openshift/origin-cli:4.14
+            script: |
+              #!/usr/bin/env bash
+              oc project $(params.namespace)
+              oc delete secret/ads-genai-secret --ignore-not-found
+              oc create secret generic ads-genai-secret \
+              --from-literal=genAI='{
+                "name": "GENAI",
+                "type": "WML",
+                "description": null,
+                "updateTime": 0,
+                "authInfo": {
+                  "authType": "IAM",
+                  "apiKey": "$(params.watsonxai-key)",
+                  "authUrl": "https://iam.bluemix.net/identity/token"
+                },
+                "providerAdditionalInfo": {
+                  "providerType": "WML",
+                  "mlUrl": "https://us-south.ml.cloud.ibm.com",
+                  "projectId": "ba473d33-e8a2-4de7-8f67-0e3d3632dc9f"
+                },
+                "version": "V1"
+              }'
+    - name: patch-genai-crd
+      runAfter:
+        - set-retrieved-watson-key
+      params:
+        - name: namespace
+          value: "$(params.namespace)"
+      taskSpec:
+        params:
+          - name: namespace
+        steps:
+          - name: set-watsonxai-key
+            image: quay.io/openshift/origin-cli:4.14
+            script: |
+              #!/usr/bin/env bash
+              oc project $(params.namespace)
+              oc patch ICP4ACluster/icp4adeploy --type=merge -p '{"spec":{"ads_configuration":{"genai_secret_name":"ads-genai-secret"}}}'
   finally:
     - name: loginorcleanup
       retries: 5
