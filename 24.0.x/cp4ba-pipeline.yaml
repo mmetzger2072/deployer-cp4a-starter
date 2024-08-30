@@ -323,9 +323,12 @@ spec:
       params:
         - name: watsonxai-key
           value: $(tasks.get-watsonxai-key.results.secret-value)
+        - name: namespace
+          value: "$(params.namespace)"
       taskSpec:
         params:
           - name: watsonxai-key
+          - name: namespace
         steps:
           - name: set-watsonxai-key
             image: quay.io/openshift/origin-cli:4.14
