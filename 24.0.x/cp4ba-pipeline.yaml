@@ -152,7 +152,7 @@ spec:
               echo "Done!"
               # apply the need operators
               oc project $(params.namespace)
-              bash $currentDir/cert-kubernetes/scripts/cpfs/installer_scripts/cp3pt0-deployment/setup_singleton.sh --enable-licensing --license-accept
+              bash $currentDir/cert-kubernetes/scripts/cpfs/installer_scripts/cp3pt0-deployment/setup_singleton.sh --enable-licensing --license-accept || true
       workspaces:
         - name: ws
     - name: deploy-cp4ba
